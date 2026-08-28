@@ -1,8 +1,6 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -814,6 +812,7 @@ Respond ONLY with valid JSON in this exact structure:
 // ----------------------------------------------------
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -832,4 +831,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only launch standalone web server if not running in a Vercel Serverless environment
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
