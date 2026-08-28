@@ -1,0 +1,8 @@
+{
+  "name": "SG I am Late Pro",
+  "description": "Real-time commuter portal for Singapore ground transport, MRT crowd forecasts, bus timings, taxi availability, and environment outlook.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
