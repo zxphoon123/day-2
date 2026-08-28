@@ -486,28 +486,83 @@ app.get('/api/maps/search', async (req: Request, res: Response) => {
   }
 });
 
+// Helper for Gemini REST generation with Header auth
+async function generateGeminiContent(prompt: string, apiKey: string, responseMimeType = 'application/json', temperature = 0.8) {
+  const sanitizedKey = apiKey.replace(/^["']|["']$/g, '').trim();
+  if (!sanitizedKey || sanitizedKey.includes('MY_GEMINI') || sanitizedKey === 'undefined') {
+    return null;
+  }
+
+  const candidateModels = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-3.7-flash',
+  ];
+
+  for (const model of candidateModels) {
+    try {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      const response = await fetchWithTimeout(geminiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': sanitizedKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            responseMimeType,
+            temperature,
+          },
+        }),
+      }, 6000);
+
+      if (response.ok) {
+        const data = await response.json();
+        const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (candidateText) {
+          return candidateText;
+        }
+      } else if (response.status === 400 || response.status === 401 || response.status === 403) {
+        // Stop if API key is invalid/unauthorized
+        break;
+      }
+    } catch {
+      // Continue to next model or fallback
+    }
+  }
+  return null;
+}
+
 // ----------------------------------------------------
 // 5. AI SMART TRANSIT ADVISORY (GEMINI API REST - x-goog-api-key in Header)
 // ----------------------------------------------------
 app.post('/api/commute/smart-advisory', async (req: Request, res: Response) => {
   const { origin, destination, weatherCondition, isPeakHour } = req.body;
+  const isRaining = weatherCondition?.toLowerCase().includes('rain') || weatherCondition?.toLowerCase().includes('thunder');
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    // Rule-based smart commuter recommendation fallback
-    const isRaining = weatherCondition?.toLowerCase().includes('rain') || weatherCondition?.toLowerCase().includes('thunder');
-    return res.json({
-      recommendedMode: 'mrt',
-      headline: isRaining
-        ? `Heavy Rain Detected: MRT is optimal from ${origin || 'Bishan'} to ${destination || 'Raffles Place'}`
-        : `Peak Commute: Take MRT to bypass road congestion to ${destination || 'Raffles Place'}`,
-      details: isRaining
-        ? `Wet road conditions will add ~10-15 mins to taxis and bus routes. MRT offers 100% sheltered connection, saving ~$18 over surge taxi fares.`
-        : `High vehicle volume on CTE/PIE. North South Line provides reliable 14-min transit without traffic delays.`,
-      confidence: 94,
-      costSavings: '$18.40',
-      timeSavings: '12 mins',
-    });
+  const defaultAdvisory = {
+    recommendedMode: 'mrt',
+    headline: isRaining
+      ? `Heavy Rain Detected: MRT is optimal from ${origin || 'Bishan'} to ${destination || 'Raffles Place'}`
+      : `Peak Commute: Take MRT to bypass road congestion to ${destination || 'Raffles Place'}`,
+    details: isRaining
+      ? `Wet road conditions will add ~10-15 mins to taxis and bus routes. MRT offers 100% sheltered connection, saving ~$18 over surge taxi fares.`
+      : `High vehicle volume on CTE/PIE. North South Line provides reliable 14-min transit without traffic delays.`,
+    confidence: 94,
+    costSavings: '$18.40',
+    timeSavings: '12 mins',
+  };
+
+  const rawKey = process.env.GEMINI_API_KEY;
+  if (!rawKey) {
+    return res.json(defaultAdvisory);
   }
 
   try {
@@ -528,52 +583,16 @@ Respond ONLY with valid JSON in this exact structure:
   "timeSavings": "12 mins"
 }`;
 
-    // Direct Server-Side REST call with x-goog-api-key in header (never in query string)
-    const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-    const response = await fetchWithTimeout(geminiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': geminiKey,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API returned ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (candidateText) {
-      const parsed = JSON.parse(candidateText);
+    const text = await generateGeminiContent(prompt, rawKey, 'application/json', 0.5);
+    if (text) {
+      const parsed = JSON.parse(text);
       return res.json(parsed);
-    } else {
-      throw new Error('No candidate text received from Gemini');
     }
-  } catch (error: any) {
-    console.error('Error with Gemini Smart Advisory:', error.message);
-    res.json({
-      recommendedMode: 'mrt',
-      headline: `MRT Recommended for ${origin || 'Bishan'} → ${destination || 'Raffles Place'}`,
-      details: `Sheltered MRT transit bypasses weather disruptions and road congestion.`,
-      confidence: 90,
-      costSavings: '$16.20',
-      timeSavings: '10 mins',
-    });
+  } catch {
+    // Fall back to rule-based advisory
   }
+
+  return res.json(defaultAdvisory);
 });
 
 // ----------------------------------------------------
@@ -582,96 +601,185 @@ Respond ONLY with valid JSON in this exact structure:
 app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
   const { tone = 'singlish', destination = 'work / meeting', currentDelayMin = 0 } = req.body || {};
 
-  const localQuotes = [
-    {
-      quote: "Early is on time, on time is late, but don't kancheong—MRT doors closing, step in with confidence!",
-      author: "Uncle Lim, Veteran MRT Marshall",
-      tag: "Singlish Hype",
-      punctualityTip: "Board near escalator carriage (Car 3/4) to shave 2 mins off transfer time.",
-    },
-    {
-      quote: "Steady pom pi pi! Leaving now means you get your morning kopi tiam seat and peace of mind.",
-      author: "CBD Kopitiam Lao Ban",
-      tag: "Local Wisdom",
-      punctualityTip: "Prep your EZ-Link or Apple Pay in advance to breeze past gantry bottlenecks.",
-    },
-    {
-      quote: "Time is Singapore's ultimate currency. Beat the rush hour crowd and conquer the day before 9 AM!",
-      author: "Shenton Way Hustler",
-      tag: "High-Flyer",
-      punctualityTip: "A 5-minute headstart saves 20 minutes of peak transit congestion.",
-    },
-    {
-      quote: "Breathe in calm, step onto the train. You have total mastery over your morning journey.",
-      author: "Commuter Zen Master",
-      tag: "Mindful Transit",
-      punctualityTip: "Check overhead arrival boards at platform interchanges for fastest train transfers.",
-    },
-    {
-      quote: "Don't panic! Check the live bus arrival countdown—every second saved is a victory for your morning!",
-      author: "Captain Punctual",
-      tag: "Quick Boost",
-      punctualityTip: "Use sheltered linkways to keep moving regardless of sudden tropical downpours.",
-    },
-  ];
+  // Distinct fallback banks tailored specifically to each of the 4 personas
+  const personaFallbacks: Record<string, Array<{ quote: string; author: string; tag: string; punctualityTip: string }>> = {
+    singlish: [
+      {
+        quote: "Steady pom pi pi! Leaving now means you get your morning kopi-o and sit down nice and shiok.",
+        author: "Uncle Lim, Veteran Kopitiam Lao Ban",
+        tag: "Singlish Hype",
+        punctualityTip: "Board near the middle carriages (Door 3/4) for direct escalator exit to avoid queue.",
+      },
+      {
+        quote: "Don't kancheong spider! Just walk briskly, tap your card chop chop, and secure that empty MRT seat!",
+        author: "Auntie Helen, MRT Commuter Champion",
+        tag: "Singlish Hype",
+        punctualityTip: "Prep your SimplyGo phone tap before reaching the gantry so nobody can 'tsk' you.",
+      },
+      {
+        quote: "Aiyo, early 5 minutes is hero, late 1 minute becomes zero. Walk fast, reach early, drink teh tarik!",
+        author: "Uncle Raymond, Bishan Station Regular",
+        tag: "Singlish Hype",
+        punctualityTip: "Use the sheltered linkway—rain or shine you still walk fast like wind.",
+      },
+      {
+        quote: "Wah lau, leave now steady! Beat the school crowd and reach your destination like a champion boss.",
+        author: "Tanjong Pagar Taxi Uncle",
+        tag: "Singlish Hype",
+        punctualityTip: "Stand at the marked platform arrows so you step in the second doors open.",
+      },
+    ],
+    inspirational: [
+      {
+        quote: "Time is the ultimate leverage in the CBD. Arriving early commands the room before anyone else speaks.",
+        author: "Marcus Vance, Shenton Way Managing Director",
+        tag: "High-Flyer Hustle",
+        punctualityTip: "Use train travel time for high-value prep: review key agenda items before arrival.",
+      },
+      {
+        quote: "Excellence is not an accident—it begins with owning the clock and mastering your morning transit.",
+        author: "Elena Neo, Venture Capitalist & 6AM Club",
+        tag: "High-Flyer Hustle",
+        punctualityTip: "Board the direct express link to bypass 20 minutes of road gridlock.",
+      },
+      {
+        quote: "Winners never fight traffic—they anticipate it, execute their departure, and win the morning.",
+        author: "Peak Commute Strategist",
+        tag: "High-Flyer Hustle",
+        punctualityTip: "A 5-minute departure buffer eliminates 95% of transit friction and anxiety.",
+      },
+      {
+        quote: "Discipline is the bridge between intention and reputation. Arrive early, set the pace, own your outcomes.",
+        author: "CBD Executive Coach",
+        tag: "High-Flyer Hustle",
+        punctualityTip: "Align with exit car 4 for instantaneous transfer at Marina Bay / Raffles Place.",
+      },
+    ],
+    witty: [
+      {
+        quote: "Leave now so you can stroll in casually looking like a genius rather than sprinting like an Olympic sweaty mess.",
+        author: "Late-Again Larry, Corporate Stand-up",
+        tag: "Witty Banter",
+        punctualityTip: "Position yourself directly below the MRT AC vents to instantly cool down in 30 seconds.",
+      },
+      {
+        quote: "Being on time means you never have to make awkward eye contact with your boss while sneaking past their desk.",
+        author: "Office Survival Specialist",
+        tag: "Witty Banter",
+        punctualityTip: "Skip the lift queue: taking the station stairs burns calories and saves 3 critical minutes.",
+      },
+      {
+        quote: "Save $35 in surge taxi fees by taking the train right now—that's literally 6 cups of premium bubble tea.",
+        author: "Financial Commuter Guru",
+        tag: "Witty Banter",
+        punctualityTip: "The faster you get through the fare gates, the longer you get to pretend to work on your phone.",
+      },
+      {
+        quote: "Legend says people who arrive 10 minutes early get to pick the best conference room swivel chair.",
+        author: "Senior Swivel Chair Connoisseur",
+        tag: "Witty Banter",
+        punctualityTip: "Keep your bag in front of you on crowded trains to glide through exits effortlessly.",
+      },
+    ],
+    zen: [
+      {
+        quote: "The train arrives when it arrives, but your calm is always within. Walk mindfully and flow with the journey.",
+        author: "Master Kai, Commuter Zen Monk",
+        tag: "Zen Calm",
+        punctualityTip: "Take 3 deep belly breaths while waiting on the platform to reset your nervous system.",
+      },
+      {
+        quote: "Do not rush against time; move in harmony with it. A peaceful departure creates a tranquil arrival.",
+        author: "The Mindful Commuter",
+        tag: "Zen Calm",
+        punctualityTip: "Let your shoulders relax as the train accelerates. The commute is your moving sanctuary.",
+      },
+      {
+        quote: "In the midst of the bustling city crowd, maintain your inner silence. You are on time, and all is well.",
+        author: "Serene Traveler",
+        tag: "Zen Calm",
+        punctualityTip: "Focus your eyes on the horizon or a fixed point to cultivate grounded stillness in transit.",
+      },
+      {
+        quote: "Breathe in peace, exhale tension. Each step toward your destination is an act of gentle presence.",
+        author: "Dharma Transit Guide",
+        tag: "Zen Calm",
+        punctualityTip: "Listen to ambient sounds without judgment as you transition smoothly between stations.",
+      },
+    ],
+  };
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    const randomPick = localQuotes[Math.floor(Math.random() * localQuotes.length)];
+  const normalizedTone = (tone.toLowerCase() === 'high-flyer' || tone.toLowerCase() === 'high_flyer') 
+    ? 'inspirational' 
+    : tone.toLowerCase();
+  
+  const personaQuotes = personaFallbacks[normalizedTone] || personaFallbacks.singlish;
+
+  const rawKey = process.env.GEMINI_API_KEY;
+  if (!rawKey) {
+    const randomPick = personaQuotes[Math.floor(Math.random() * personaQuotes.length)];
     return res.json(randomPick);
   }
+
+  // Define precise persona prompt instructions
+  const personaGuidelines: Record<string, string> = {
+    singlish: `PERSONA: Uncle / Auntie Singaporean Commuter Legend (Singlish Hype).
+STYLE: Authentic, humorous, warm colloquial Singaporean Singlish. Use vibrant local terms like 'steady pom pi pi', 'kancheong spider', 'chop chop', 'kopi-o', 'alamak', 'chope', 'shiok', 'tapao', 'MRT doors closing'.
+VOICE: Like a veteran Kopitiam Uncle, Bishan MRT marshall, or friendly hawker cheering you on.
+AUTHOR: Authentic local character like 'Uncle Lim (Kopitiam Boss)' or 'Auntie Helen (Commuter Champion)'.
+TAG: 'Singlish Hype'`,
+    
+    inspirational: `PERSONA: Shenton Way / CBD High-Flyer Executive (High-Flyer Hustle).
+STYLE: Sharp, ambitious, high-energy executive mindset. Focus on time as high-value currency, competitive advantage, boardroom leadership, 6 AM club discipline, and winning the day before 9 AM.
+VOICE: Elite venture capitalist, managing director, or performance strategist.
+AUTHOR: High-powered professional like 'Marcus Vance (Shenton Way MD)' or 'Elena Neo (Venture Partner)'.
+TAG: 'High-Flyer Hustle'`,
+
+    witty: `PERSONA: Sarcastic, Relatable Modern Office Commuter (Witty Banter).
+STYLE: Laugh-out-loud funny, sarcastic, clever observations about avoiding late eye-contact with the boss, Singapore's humid sprint vs glorious air-con train, saving cab surge money for boba, lift queues.
+VOICE: A witty stand-up comedian or sarcastic corporate survivor.
+AUTHOR: Character like 'Late-Again Larry (Office Comedian)' or 'Senior Swivel Chair Strategist'.
+TAG: 'Witty Banter'`,
+
+    zen: `PERSONA: Mindful Transit Monk (Zen Calm).
+STYLE: Deeply soothing, peaceful, stoic, grounded, poetic. Emphasizes flowing with time, mindful breathing, seeing the MRT journey as a calm moving sanctuary rather than a chaotic rush.
+VOICE: Serene meditation guide or Zen transit philosopher.
+AUTHOR: Character like 'Master Kai (Commuter Zen Monk)' or 'The Mindful Commuter'.
+TAG: 'Zen Calm'`
+  };
+
+  const personaInstruction = personaGuidelines[normalizedTone] || personaGuidelines.singlish;
 
   try {
     const prompt = `You are the Singapore Punctuality Coach ("SG I am Late Pro Punctuality Booster").
-Generate a short, punchy, witty, encouraging message to inspire a commuter to stay punctual, avoid being late, and reach ${destination} smoothly.
-Tone style: ${tone} (Options: authentic Singaporean Singlish with terms like 'steady', 'kancheong spider', 'kopi', or inspiring, or witty).
-Current situation: ${currentDelayMin > 0 ? `Commuter is slightly delayed by ${currentDelayMin} mins.` : 'Commuter is heading out now.'}
+Generate a customized, highly encouraging punctuality message for a commuter heading to "${destination}".
+${currentDelayMin > 0 ? `Current situation: Commuter is delayed by ${currentDelayMin} minutes, so provide an encouraging recovery push!` : 'Current situation: Commuter is heading out now to arrive ahead of time.'}
+
+${personaInstruction}
+
+CRITICAL RULES:
+1. Strictly follow the assigned persona's distinct voice, vocabulary, and tone.
+2. Provide 1 practical, actionable Singapore transit micro-tip (e.g. carriage door positioning, MRT air-con hack, SimplyGo tap shortcut, sheltered linkway) that matches the persona style.
 
 Respond ONLY with valid JSON in this exact structure:
 {
-  "quote": "Short punchy 1-2 sentence motivating quote or Singlish encouragement to be on time",
-  "author": "Creative character name (e.g. 'Uncle Kopi', 'Shenton Way Pro', 'MRT Announcer')",
-  "tag": "Tone label (e.g. 'Singlish Hype', 'CBD Hustler', 'Mindful Focus')",
-  "punctualityTip": "1 practical actionable micro-tip for Singapore transit to shave off 2-3 minutes"
+  "quote": "1-2 punchy, distinct sentences in full character voice",
+  "author": "Persona character name with relevant title",
+  "tag": "Tone label corresponding to persona",
+  "punctualityTip": "1 practical actionable micro-tip for Singapore transit"
 }`;
 
-    const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-    const response = await fetchWithTimeout(geminiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': geminiKey,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Gemini API error ${response.status}`);
-    }
-
-    const data = await response.json();
-    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (candidateText) {
-      const parsed = JSON.parse(candidateText);
+    const text = await generateGeminiContent(prompt, rawKey, 'application/json', 0.85);
+    if (text) {
+      const parsed = JSON.parse(text);
       return res.json(parsed);
-    } else {
-      throw new Error('No candidate text');
     }
-  } catch (error: any) {
-    console.warn('Falling back to local punctuality quote:', error.message);
-    const randomPick = localQuotes[Math.floor(Math.random() * localQuotes.length)];
-    return res.json(randomPick);
+  } catch {
+    // Fall back to persona quotes smoothly
   }
+
+  const randomPick = personaQuotes[Math.floor(Math.random() * personaQuotes.length)];
+  return res.json(randomPick);
 });
 
 // ----------------------------------------------------
