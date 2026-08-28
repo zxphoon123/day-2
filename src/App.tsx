@@ -66,6 +66,7 @@ export default function App() {
             onNavigateToBus={() => setActiveTab('bus')}
             onNavigateToMrt={() => setActiveTab('mrt')}
             onNavigateToWeather={() => setActiveTab('weather')}
+            onNavigateToCommunity={() => setActiveTab('community')}
           />
         )}
 

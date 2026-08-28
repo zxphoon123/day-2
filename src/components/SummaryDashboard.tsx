@@ -4,18 +4,19 @@ import { PunctualityBooster } from './PunctualityBooster';
 import { RouteOption } from '../types';
 import { INITIAL_ROUTE_OPTIONS, NEARBY_DEPARTURES } from '../data/mockData';
 import { fetchSmartAdvisory, fetchLiveWeather } from '../services/api';
-import { DisqusComments } from './DisqusComments';
 
 interface SummaryDashboardProps {
   onNavigateToBus: () => void;
   onNavigateToMrt: () => void;
   onNavigateToWeather: () => void;
+  onNavigateToCommunity?: () => void;
 }
 
 export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
   onNavigateToBus,
   onNavigateToMrt,
   onNavigateToWeather,
+  onNavigateToCommunity,
 }) => {
   const [origin, setOrigin] = useState<string>('Bishan Interchange');
   const [destinationA, setDestinationA] = useState<string>('Marina Bay Sands');
@@ -404,13 +405,32 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
           </div>
         </div>
 
-        {/* Live Commuter Disqus Community Feed */}
-        <div className="mt-8">
-          <DisqusComments
-            identifier="sg-commuter-portal-summary"
-            title="SG Commuter Live Feed & Community"
-            shortname="zacphoon"
-          />
+        {/* Live Commuter Community CTA */}
+        <div className="mt-8 bg-[#171f33] border border-[#334155] hover:border-[#a6c8ff]/60 rounded-xl p-5 md:p-6 shadow-md transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-[#005baa]/25 border border-[#005baa] flex items-center justify-center text-[#a6c8ff]">
+              <span className="material-symbols-outlined text-[24px]">forum</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-[#dae2fd]">Live Commuter Community & Ground Reports</h3>
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-[#005baa]/20 text-[#a6c8ff] border border-[#005baa]/40">
+                  Disqus
+                </span>
+              </div>
+              <p className="text-xs text-[#c1c6d3] mt-0.5">
+                Join active discussions, view MRT station alerts, bus crowd reports, and share commute hacks.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onNavigateToCommunity}
+            className="flex items-center gap-2 text-xs md:text-sm font-semibold bg-[#005baa] hover:bg-[#004b8d] text-white px-4 py-2 rounded-lg border border-[#3b82f6]/60 shadow-sm transition-all cursor-pointer whitespace-nowrap"
+          >
+            <span>Open Community Forum</span>
+            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+          </button>
         </div>
       </div>
     </div>
