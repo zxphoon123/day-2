@@ -1,4 +1,4 @@
-export type ActiveTab = 'summary' | 'bus' | 'mrt' | 'weather';
+export type ActiveTab = 'summary' | 'bus' | 'mrt' | 'weather' | 'community';
 
 export interface RouteOption {
   id: string;

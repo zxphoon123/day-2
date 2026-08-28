@@ -4,6 +4,7 @@ import { SummaryDashboard } from './components/SummaryDashboard';
 import { BusTaxiDashboard } from './components/BusTaxiDashboard';
 import { MrtDashboard } from './components/MrtDashboard';
 import { WeatherDashboard } from './components/WeatherDashboard';
+import { CommunityDashboard } from './components/CommunityDashboard';
 import { UserModal } from './components/UserModal';
 import { HelpModal } from './components/HelpModal';
 import { ActiveTab } from './types';
@@ -73,6 +74,8 @@ export default function App() {
         {activeTab === 'mrt' && <MrtDashboard />}
 
         {activeTab === 'weather' && <WeatherDashboard />}
+
+        {activeTab === 'community' && <CommunityDashboard />}
       </main>
 
       {/* Modals */}

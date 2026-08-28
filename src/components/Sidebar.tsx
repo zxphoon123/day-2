@@ -20,6 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'bus', label: 'Bus', icon: 'directions_bus' },
     { id: 'mrt', label: 'MRT', icon: 'train' },
     { id: 'weather', label: 'Weather', icon: 'cloud' },
+    { id: 'community', label: 'Community', icon: 'forum' },
   ];
 
   return (

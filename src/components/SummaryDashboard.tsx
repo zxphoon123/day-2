@@ -4,6 +4,7 @@ import { PunctualityBooster } from './PunctualityBooster';
 import { RouteOption } from '../types';
 import { INITIAL_ROUTE_OPTIONS, NEARBY_DEPARTURES } from '../data/mockData';
 import { fetchSmartAdvisory, fetchLiveWeather } from '../services/api';
+import { DisqusComments } from './DisqusComments';
 
 interface SummaryDashboardProps {
   onNavigateToBus: () => void;
@@ -401,6 +402,15 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
               />
             </div>
           </div>
+        </div>
+
+        {/* Live Commuter Disqus Community Feed */}
+        <div className="mt-8">
+          <DisqusComments
+            identifier="sg-commuter-portal-summary"
+            title="SG Commuter Live Feed & Community"
+            shortname="zacphoon"
+          />
         </div>
       </div>
     </div>
