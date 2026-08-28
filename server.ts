@@ -487,7 +487,7 @@ app.get('/api/maps/search', async (req: Request, res: Response) => {
 });
 
 // ----------------------------------------------------
-// 5. AI SMART TRANSIT ADVISORY (GEMINI API)
+// 5. AI SMART TRANSIT ADVISORY (GEMINI API REST - x-goog-api-key in Header)
 // ----------------------------------------------------
 app.post('/api/commute/smart-advisory', async (req: Request, res: Response) => {
   const { origin, destination, weatherCondition, isPeakHour } = req.body;
@@ -511,7 +511,6 @@ app.post('/api/commute/smart-advisory', async (req: Request, res: Response) => {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: geminiKey });
     const prompt = `You are the AI Commuter Assistant for Singapore ("SG I am Late Pro").
 Analyze this commute request:
 - Origin: ${origin || 'Bishan Station'}
@@ -529,20 +528,40 @@ Respond ONLY with valid JSON in this exact structure:
   "timeSavings": "12 mins"
 }`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
+    // Direct Server-Side REST call with x-goog-api-key in header (never in query string)
+    const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+    const response = await fetchWithTimeout(geminiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': geminiKey,
       },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
+      }),
     });
 
-    const text = response.text;
-    if (text) {
-      const parsed = JSON.parse(text);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API returned ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (candidateText) {
+      const parsed = JSON.parse(candidateText);
       return res.json(parsed);
     } else {
-      throw new Error('Empty response from Gemini');
+      throw new Error('No candidate text received from Gemini');
     }
   } catch (error: any) {
     console.error('Error with Gemini Smart Advisory:', error.message);
