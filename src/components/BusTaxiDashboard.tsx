@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BUS_SERVICES, OD_FLOWS } from '../data/mockData';
 import { BusServiceItem } from '../types';
 import { fetchBusArrivals, fetchLiveTaxis } from '../services/api';
+import { calculateRegulatedTaxiFare, verifyTaxiPrice } from '../utils/taxiFareEngine';
 
 export const BusTaxiDashboard: React.FC = () => {
   const [busList, setBusList] = useState<BusServiceItem[]>(BUS_SERVICES);
@@ -13,6 +14,10 @@ export const BusTaxiDashboard: React.FC = () => {
   const [volumeFilter, setVolumeFilter] = useState<'all' | 'Low' | 'Med' | 'High'>('all');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [busStopCode, setBusStopCode] = useState<string>('09048'); // Tang Plaza
+  const [calcDistanceKm, setCalcDistanceKm] = useState<number>(12);
+  const [isPeakChecked, setIsPeakChecked] = useState<boolean>(true);
+  const [isCbdChecked, setIsCbdChecked] = useState<boolean>(true);
+  const [isMidnightChecked, setIsMidnightChecked] = useState<boolean>(false);
 
   const loadLiveData = async () => {
     setIsLoading(true);
@@ -260,51 +265,138 @@ export const BusTaxiDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Top Right: Taxi Fleet Status (Span 4) */}
-        <div className="md:col-span-4 bg-[#1E293B] border border-[#334155] rounded-xl p-6 flex flex-col justify-between shadow-md">
+        {/* Top Right: Taxi Fleet Status & Meter Accuracy Engine (Span 4) */}
+        <div className="md:col-span-4 bg-[#1E293B] border border-[#334155] rounded-xl p-5 flex flex-col justify-between shadow-md gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-2">
-              <span
-                className="material-symbols-outlined text-[#005BAA] text-[28px]"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                local_taxi
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2.5">
+                <span
+                  className="material-symbols-outlined text-[#005BAA] text-[24px]"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  local_taxi
+                </span>
+                <h3 className="text-[15px] font-bold text-[#dae2fd]">
+                  Taxi Fleet &amp; Fare Engine
+                </h3>
+              </div>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40">
+                LTA Regulated
               </span>
-              <h3 className="text-[16px] font-bold text-[#dae2fd]">
-                Taxi Fleet Status (Data.gov.sg v1)
-              </h3>
             </div>
-            <p className="text-[12px] text-[#c1c6d3] mb-6">
-              Live availability near your starting point (500m radius)
+            <p className="text-[11px] text-[#8c919d]">
+              Live vehicle density via Data.gov.sg v1 + PTC tariff calculator
             </p>
           </div>
 
-          <div className="space-y-5">
-            <div>
-              <div className="text-[44px] font-bold text-[#a6c8ff] font-mono leading-none mb-1">
-                {taxiCount}
+          <div className="space-y-4">
+            <div className="flex items-end justify-between bg-[#171f33] p-3 rounded-lg border border-[#334155]/60">
+              <div>
+                <div className="text-[32px] font-bold text-[#a6c8ff] font-mono leading-none mb-1">
+                  {taxiCount}
+                </div>
+                <div className="text-[11px] text-[#c1c6d3]">Nearby Tang Plaza (500m)</div>
               </div>
-              <div className="text-[13px] text-[#c1c6d3] flex items-center justify-between">
-                <span>Taxis Available Nearby</span>
-                <span className="text-[11px] font-mono text-[#34C759]">({totalSingaporeTaxis.toLocaleString()} island-wide)</span>
+              <div className="text-right">
+                <span className="text-[11px] font-mono text-[#34C759] block">
+                  {totalSingaporeTaxis.toLocaleString()} island-wide
+                </span>
+                <span className="text-[11px] text-[#FFCC00] font-medium">~3-5 min ETA</span>
               </div>
             </div>
 
-            <div className="w-full h-px bg-[#334155]"></div>
+            {/* Interactive LTA Meter Calculator */}
+            {(() => {
+              const fare = calculateRegulatedTaxiFare(
+                calcDistanceKm,
+                isPeakChecked,
+                isMidnightChecked,
+                isCbdChecked
+              );
+              return (
+                <div className="bg-[#0b1326] p-3.5 rounded-xl border border-[#334155] space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-white flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[#a6c8ff] text-[14px]">calculate</span>
+                      Metered Fare Check
+                    </span>
+                    <span className="font-mono font-bold text-[#a6c8ff] text-sm">
+                      ${fare.totalFare.toFixed(2)}
+                    </span>
+                  </div>
 
-            <div>
-              <div className="text-[26px] font-bold text-[#FFCC00] font-mono leading-none mb-1">
-                ~3-5 mins
-              </div>
-              <div className="text-[14px] text-[#c1c6d3]">Average Pickup Wait Time</div>
-            </div>
+                  {/* Distance Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] text-[#8c919d]">
+                      <span>Trip Distance</span>
+                      <span className="text-white font-mono">{calcDistanceKm} km</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="40"
+                      step="1"
+                      value={calcDistanceKm}
+                      onChange={(e) => setCalcDistanceKm(Number(e.target.value))}
+                      className="w-full h-1 bg-[#222a3d] rounded-lg appearance-none cursor-pointer accent-[#a6c8ff]"
+                    />
+                  </div>
+
+                  {/* Surcharges Toggle Pills */}
+                  <div className="flex flex-wrap gap-1.5 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setIsPeakChecked(!isPeakChecked)}
+                      className={`px-2 py-1 rounded-md border transition-all cursor-pointer ${
+                        isPeakChecked
+                          ? 'bg-[#005baa]/30 border-[#005baa] text-[#a6c8ff] font-bold'
+                          : 'bg-[#171f33] border-[#334155] text-[#8c919d]'
+                      }`}
+                    >
+                      Peak +25% (${fare.peakSurcharge.toFixed(2)})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsCbdChecked(!isCbdChecked)}
+                      className={`px-2 py-1 rounded-md border transition-all cursor-pointer ${
+                        isCbdChecked
+                          ? 'bg-[#005baa]/30 border-[#005baa] text-[#a6c8ff] font-bold'
+                          : 'bg-[#171f33] border-[#334155] text-[#8c919d]'
+                      }`}
+                    >
+                      CBD +$3.00
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMidnightChecked(!isMidnightChecked);
+                        if (!isMidnightChecked) setIsPeakChecked(false);
+                      }}
+                      className={`px-2 py-1 rounded-md border transition-all cursor-pointer ${
+                        isMidnightChecked
+                          ? 'bg-[#e65100]/30 border-[#e65100] text-[#ffb74d] font-bold'
+                          : 'bg-[#171f33] border-[#334155] text-[#8c919d]'
+                      }`}
+                    >
+                      Midnight +50%
+                    </button>
+                  </div>
+
+                  {/* Accuracy Policy Notice */}
+                  <div className="text-[10px] text-[#8c919d] leading-tight pt-1 border-t border-[#334155]/40 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[12px] text-[#34C759]">shield</span>
+                    <span>No guesswork: Private app surge is unverified without booking API.</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <button
               id="hail-taxi-btn"
               onClick={handleHailTaxi}
-              className="w-full bg-[#005BAA] hover:bg-[#004787] text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              className="w-full bg-[#005BAA] hover:bg-[#004787] text-white font-semibold text-xs py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
             >
-              <span className="material-symbols-outlined text-[18px]">local_taxi</span>
+              <span className="material-symbols-outlined text-[16px]">local_taxi</span>
               <span>Hail Closest Taxi (Tang Plaza Stand)</span>
             </button>
           </div>

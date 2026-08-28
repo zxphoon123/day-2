@@ -118,9 +118,12 @@ export const CommunityDashboard: React.FC = () => {
       {/* Main Disqus Integration */}
       <div className="mt-2">
         <DisqusComments
-          identifier="sg-commuter-portal-discussions"
-          title="SG Commuter Portal Discussions"
-          shortname="zacphoon"
+          article={{
+            id: `sg-commuter-${selectedTopic}`,
+            title: `SG Commuter - ${topics.find((t) => t.id === selectedTopic)?.label || 'Community'}`,
+          }}
+          shortname="day-2-project-1"
+          language="zh_TW"
         />
       </div>
     </div>

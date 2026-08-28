@@ -7,11 +7,16 @@ export interface RouteOption {
   subtext: string;
   durationMin: number;
   cost: number;
+  costRange?: string;
   surgeLevel?: 'High Surge' | 'Normal Crowd' | 'Moderate Traffic' | 'Low Traffic';
   statusColor?: string;
   isBest?: boolean;
   mrtLines?: string[];
   busNumber?: string;
+  distanceKm?: number;
+  fareAccuracyStatus?: 'verified_meter' | 'unverified_surge' | 'accurate_transit' | 'location_unresolved';
+  accuracyNote?: string;
+  surgeWarning?: string;
 }
 
 export interface DepartureItem {

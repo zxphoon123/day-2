@@ -572,13 +572,13 @@ const handleSmartAdvisory = async (req: Request, res: Response) => {
   const defaultAdvisory = {
     recommendedMode: 'mrt',
     headline: isRaining
-      ? `Heavy Rain Detected: MRT is optimal from ${origin || 'Bishan'} to ${destination || 'Raffles Place'}`
-      : `Peak Commute: Take MRT to bypass road congestion to ${destination || 'Raffles Place'}`,
+      ? `Heavy Rain Detected: MRT is optimal from ${origin || 'Bishan'} to ${destination || 'Marina Bay Sands'}`
+      : `Peak Commute: Take MRT to bypass road congestion to ${destination || 'Marina Bay Sands'}`,
     details: isRaining
-      ? `Wet road conditions will add ~10-15 mins to taxis and bus routes. MRT offers 100% sheltered connection, saving ~$18 over surge taxi fares.`
-      : `High vehicle volume on CTE/PIE. North South Line provides reliable 14-min transit without traffic delays.`,
+      ? `Wet road conditions add 10-15 mins to road traffic. MRT offers sheltered connections, saving ~$14.70 - $19.20 compared to metered taxi fares.`
+      : `High vehicle volume on expressways. MRT provides reliable transit without road delays or meter surcharges.`,
     confidence: 94,
-    costSavings: '$18.40',
+    costSavings: '$14.70 - $19.20',
     timeSavings: '12 mins',
   };
 
@@ -591,17 +591,19 @@ const handleSmartAdvisory = async (req: Request, res: Response) => {
     const prompt = `You are the AI Commuter Assistant for Singapore ("SG I am Late Pro").
 Analyze this commute request:
 - Origin: ${origin || 'Bishan Station'}
-- Destination: ${destination || 'Raffles Place'}
+- Destination: ${destination || 'Marina Bay Sands'}
 - Weather: ${weatherCondition || 'Scattered Thunderstorms'}
 - Peak Hour: ${isPeakHour ? 'Yes' : 'No'}
+
+Pricing Accuracy Mandate: In Singapore, standard metered taxis cost ~$15-$25 for typical 10-15km trips, while MRT costs ~$1.50-$2.30. Do NOT suggest inaccurate, fabricated surge numbers without basis. State realistic estimated savings compared to metered taxi range (e.g., "$14.00 - $19.00").
 
 Respond ONLY with valid JSON in this exact structure:
 {
   "recommendedMode": "mrt" | "bus" | "taxi",
   "headline": "Short crisp advice headline",
-  "details": "Detailed 2-sentence rationale considering Singapore MRT sheltered connections, road congestion, surge pricing, or bus occupancy.",
+  "details": "Detailed 2-sentence rationale considering Singapore MRT sheltered connections, road congestion, LTA meter tariff, or bus occupancy.",
   "confidence": 92,
-  "costSavings": "$18.40",
+  "costSavings": "$14.70 - $19.20",
   "timeSavings": "12 mins"
 }`;
 

@@ -1,190 +1,135 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { DiscussionEmbed } from 'disqus-react';
 
-declare global {
-  interface Window {
-    DISQUS?: {
-      reset: (options: {
-        reload: boolean;
-        config?: (this: {
-          page: {
-            url: string;
-            identifier: string;
-            title?: string;
-          };
-        }) => void;
-      }) => void;
-    };
-    disqus_config?: (this: {
-      page: {
-        url: string;
-        identifier: string;
-        title?: string;
-      };
-    }) => void;
-  }
+export interface ArticleConfig {
+  id?: string;
+  url?: string;
+  title?: string;
 }
 
-interface DisqusCommentsProps {
+export interface DisqusCommentsProps {
+  article?: ArticleConfig;
   identifier?: string;
   title?: string;
   url?: string;
   shortname?: string;
+  language?: string;
 }
 
 export const DisqusComments: React.FC<DisqusCommentsProps> = ({
-  identifier = 'sg-commuter-portal-main',
-  title = 'SG Commuter Portal Discussions',
+  article,
+  identifier,
+  title,
   url,
-  shortname = 'zacphoon',
+  shortname = 'day-2-project-1',
+  language = 'zh_TW',
 }) => {
-  const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const [loadFailed, setLoadFailed] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
 
-  // Safe canonical URL
-  const canonicalUrl = url || 'https://sg-commuter-portal.vercel.app/community';
+  // Determine effective ID, Title, and URL from either `article` prop or individual props
+  const effectiveIdentifier = article?.id || identifier || 'sg-commuter-portal-discussions';
+  const effectiveTitle = article?.title || title || 'SG Commuter Portal Discussions';
 
-  useEffect(() => {
-    try {
-      window.disqus_config = function () {
-        this.page.url = canonicalUrl;
-        this.page.identifier = identifier;
-        this.page.title = title;
-      };
-
-      const disqusScriptId = 'disqus-embed-script';
-      const existingScript = document.getElementById(disqusScriptId);
-
-      if (window.DISQUS) {
-        try {
-          window.DISQUS.reset({
-            reload: true,
-            config: function () {
-              this.page.url = canonicalUrl;
-              this.page.identifier = identifier;
-              this.page.title = title;
-            },
-          });
-          setIsLoaded(true);
-        } catch {
-          setIsLoaded(true);
-        }
-      } else if (!existingScript) {
-        const script = document.createElement('script');
-        script.id = disqusScriptId;
-        script.src = `https://${shortname}.disqus.com/embed.js`;
-        script.setAttribute('data-timestamp', String(+new Date()));
-        script.async = true;
-        script.onload = () => {
-          setIsLoaded(true);
-        };
-        script.onerror = () => {
-          setLoadFailed(true);
-          setIsLoaded(true);
-        };
-
-        (document.head || document.body).appendChild(script);
-      } else {
-        setIsLoaded(true);
+  // Compute canonical URL safely for Vercel deployment preview domains and custom domains
+  const getCanonicalUrl = (): string => {
+    if (article?.url) return article.url;
+    if (url) return url;
+    if (typeof window !== 'undefined') {
+      try {
+        const origin = window.location.origin;
+        const pathname = window.location.pathname;
+        return `${origin}${pathname}`.replace(/\/+$/, '') || `${origin}/community`;
+      } catch {
+        return `https://${shortname}.disqus.com`;
       }
-    } catch {
-      setLoadFailed(true);
-      setIsLoaded(true);
     }
-  }, [identifier, canonicalUrl, title, shortname]);
+    return `https://${shortname}.disqus.com`;
+  };
+
+  const canonicalUrl = getCanonicalUrl();
+
+  // Ensure DOM is ready and window is accessible before rendering disqus-react (SSR / Vercel safe)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const disqusConfig = {
+    url: canonicalUrl,
+    identifier: effectiveIdentifier,
+    title: effectiveTitle,
+    language: language,
+  };
 
   return (
-    <div className="w-full bg-[#171f33] border border-[#334155] rounded-xl p-5 md:p-6 shadow-md transition-all">
-      <div className="flex items-center justify-between border-b border-[#334155] pb-4 mb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-[#005baa]/30 border border-[#005baa] flex items-center justify-center text-[#a6c8ff]">
-            <span className="material-symbols-outlined text-[22px]">forum</span>
+    <div
+      id="disqus-container-card"
+      className="w-full bg-[#171f33] border border-[#334155] rounded-2xl p-5 md:p-6 shadow-xl transition-all"
+    >
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#334155] pb-4 mb-5">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-[#005baa]/25 border border-[#005baa]/50 flex items-center justify-center text-[#a6c8ff]">
+            <span className="material-symbols-outlined text-[24px]">forum</span>
           </div>
           <div>
-            <h3 className="text-base font-bold text-[#dae2fd] tracking-tight flex items-center gap-2">
-              Commuter Live Chat & Feedback
-              <span className="text-[11px] font-normal px-2 py-0.5 bg-[#005baa]/20 text-[#a6c8ff] rounded border border-[#005baa]/40">
-                Disqus Powered
+            <div className="flex items-center gap-2">
+              <h3 className="text-base md:text-lg font-bold text-[#dae2fd] tracking-tight">
+                Commuter Community Forum
+              </h3>
+              <span className="text-[10px] font-semibold px-2 py-0.5 bg-[#005baa]/20 text-[#a6c8ff] rounded-md border border-[#005baa]/40">
+                Disqus: {shortname}
               </span>
-            </h3>
-            <p className="text-xs text-[#c1c6d3]">
-              Share real-time transit alerts, station crowds, or leave commuter tips for fellow travelers.
+            </div>
+            <p className="text-xs text-[#c1c6d3] mt-0.5">
+              Live transit updates, delay alerts, and daily commuter discussions powered by Disqus.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action Controls */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
           <a
             href={`https://${shortname}.disqus.com`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-[#a6c8ff] hover:text-white px-3 py-1.5 rounded-lg bg-[#222a3d] border border-[#334155] hover:border-[#a6c8ff] transition-all"
-            title="Open Disqus Channel in New Tab"
+            className="flex items-center gap-1.5 text-xs text-[#a6c8ff] hover:text-white px-3 py-1.5 rounded-lg bg-[#222a3d] border border-[#334155] hover:border-[#a6c8ff] transition-all"
+            title="Open Discussions Directly on Disqus Hub"
           >
             <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-            <span className="hidden sm:inline">Disqus Hub</span>
+            <span>Open in Disqus</span>
           </a>
-
-          <button
-            onClick={() => {
-              if (window.DISQUS) {
-                try {
-                  window.DISQUS.reset({
-                    reload: true,
-                    config: function () {
-                      this.page.url = canonicalUrl;
-                      this.page.identifier = identifier;
-                      this.page.title = title;
-                    },
-                  });
-                } catch {
-                  // Ignore
-                }
-              }
-            }}
-            className="flex items-center gap-1.5 text-xs text-[#a6c8ff] hover:text-white px-3 py-1.5 rounded-lg bg-[#222a3d] border border-[#334155] hover:border-[#a6c8ff] transition-all cursor-pointer"
-            title="Reload Comments"
-          >
-            <span className="material-symbols-outlined text-[16px]">refresh</span>
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
         </div>
       </div>
 
-      {/* Disqus Container */}
-      <div className="min-h-[220px] relative">
-        {!isLoaded && (
-          <div className="flex flex-col items-center justify-center py-12 gap-3 text-[#c1c6d3]">
-            <div className="w-6 h-6 border-2 border-[#005baa] border-t-transparent rounded-full animate-spin"></div>
-            <span className="text-xs">Loading Disqus Community Feed...</span>
+      {/* Embed Container Area with DiscussionEmbed */}
+      <div className="min-h-[260px] relative">
+        {mounted ? (
+          <div className="disqus-react-wrapper bg-white/5 rounded-xl p-3 md:p-4 min-h-[180px]">
+            <DiscussionEmbed
+              key={`${shortname}-${effectiveIdentifier}`}
+              shortname={shortname}
+              config={disqusConfig}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-[#c1c6d3]">
+            <div className="w-7 h-7 border-2 border-[#005baa] border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-xs font-medium">Connecting to Disqus DiscussionEmbed ({shortname})...</span>
           </div>
         )}
-
-        {loadFailed && (
-          <div className="p-4 mb-4 rounded-lg bg-[#222a3d] border border-[#334155] text-xs text-[#c1c6d3] flex items-center justify-between">
-            <span>Third-party cookies or tracker blocker detected. You can open the discussions directly in Disqus:</span>
-            <a
-              href={`https://${shortname}.disqus.com`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#a6c8ff] underline font-medium ml-2"
-            >
-              Open zacphoon.disqus.com →
-            </a>
-          </div>
-        )}
-
-        <div id="disqus_thread" className="disqus-container bg-white/5 rounded-lg p-3"></div>
 
         <noscript>
-          Please enable JavaScript to view the{' '}
-          <a
-            href="https://disqus.com/?ref_noscript"
-            rel="nofollow noopener noreferrer"
-            target="_blank"
-            className="text-[#a6c8ff] underline"
-          >
-            comments powered by Disqus.
-          </a>
+          <div className="p-4 rounded-xl bg-[#222a3d] text-xs text-[#c1c6d3] text-center mt-3">
+            Please enable JavaScript to view the{' '}
+            <a
+              href={`https://${shortname}.disqus.com/?ref_noscript`}
+              rel="nofollow noopener noreferrer"
+              target="_blank"
+              className="text-[#a6c8ff] underline"
+            >
+              comments powered by Disqus.
+            </a>
+          </div>
         </noscript>
       </div>
     </div>

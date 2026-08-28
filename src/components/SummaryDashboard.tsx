@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { InteractiveMap } from './InteractiveMap';
 import { PunctualityBooster } from './PunctualityBooster';
 import { RouteOption } from '../types';
 import { INITIAL_ROUTE_OPTIONS, NEARBY_DEPARTURES } from '../data/mockData';
 import { fetchSmartAdvisory, fetchLiveWeather } from '../services/api';
+import { verifyTaxiPrice, calculatePublicTransitFare } from '../utils/taxiFareEngine';
 
 interface SummaryDashboardProps {
   onNavigateToBus: () => void;
@@ -23,13 +24,84 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
   const [destinationB, setDestinationB] = useState<string>('');
   const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
   const [selectedRouteId, setSelectedRouteId] = useState<string>('opt-mrt');
-  const [routeOptions, setRouteOptions] = useState<RouteOption[]>(INITIAL_ROUTE_OPTIONS);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showFareAccuracyModal, setShowFareAccuracyModal] = useState<boolean>(false);
+
+  // Compute verified fares dynamically based on current origin & destination
+  const fareVerification = useMemo(() => {
+    return verifyTaxiPrice(origin, destinationA);
+  }, [origin, destinationA]);
+
+  const transitFares = useMemo(() => {
+    const dist = fareVerification.distanceKm || 12.5;
+    return calculatePublicTransitFare(dist);
+  }, [fareVerification.distanceKm]);
+
+  // Dynamically constructed route options reflecting verified pricing
+  const routeOptions: RouteOption[] = useMemo(() => {
+    const isLocVerified = fareVerification.isLocationVerified;
+    const dist = fareVerification.distanceKm || 12.5;
+
+    // Estimate transit times
+    const taxiDuration = Math.max(10, Math.round(dist * 1.4 + (fareVerification.isPeakHour ? 6 : 2)));
+    const mrtDuration = Math.max(12, Math.round(dist * 1.8 + 4));
+    const busDuration = Math.max(18, Math.round(dist * 2.6 + 6));
+
+    const taxiOption: RouteOption = {
+      id: 'opt-taxi',
+      type: 'taxi',
+      name: isLocVerified ? 'Metered Taxi (LTA Rate)' : 'Taxi / Ride-Hail',
+      subtext: isLocVerified ? 'LTA Meter • Surge Unverified' : 'Dynamic Fare (Unverified)',
+      durationMin: taxiDuration,
+      cost: isLocVerified ? fareVerification.meteredBaseFare : 0,
+      costRange: isLocVerified ? fareVerification.recommendedDisplayPrice : 'Check Booking App',
+      distanceKm: dist,
+      surgeLevel: 'High Surge',
+      statusColor: 'text-[#FF9A00]',
+      fareAccuracyStatus: isLocVerified ? 'verified_meter' : 'location_unresolved',
+      accuracyNote: fareVerification.accuracyNote,
+      surgeWarning: fareVerification.surgeWarning,
+    };
+
+    const mrtOption: RouteOption = {
+      id: 'opt-mrt',
+      type: 'mrt',
+      name: 'MRT (NSL > CCL)',
+      subtext: 'PTC Regulated Adult Fare',
+      durationMin: mrtDuration,
+      cost: transitFares.mrtFare,
+      distanceKm: dist,
+      surgeLevel: 'Normal Crowd',
+      statusColor: 'text-[#34C759]',
+      isBest: true,
+      mrtLines: ['#D42E12', '#FF9A00'],
+      fareAccuracyStatus: 'accurate_transit',
+      accuracyNote: `PTC regulated distance-based adult fare ($${transitFares.mrtFare.toFixed(2)} for ${dist} km).`,
+    };
+
+    const busOption: RouteOption = {
+      id: 'opt-bus',
+      type: 'bus',
+      name: 'Bus 133 / Express',
+      subtext: 'PTC Regulated Adult Fare',
+      durationMin: busDuration,
+      cost: transitFares.busFare,
+      distanceKm: dist,
+      surgeLevel: 'Moderate Traffic',
+      statusColor: 'text-[#FFCC00]',
+      busNumber: '133',
+      fareAccuracyStatus: 'accurate_transit',
+      accuracyNote: `PTC regulated distance-based adult fare ($${transitFares.busFare.toFixed(2)} for ${dist} km).`,
+    };
+
+    return [taxiOption, mrtOption, busOption];
+  }, [fareVerification, transitFares]);
+
   const [smartAdvisory, setSmartAdvisory] = useState({
     headline: 'Heavy rain forecasted in Marina Bay area within 30 minutes.',
-    details: 'Take the MRT to save $18.40 compared to surging taxi prices, and stay dry entirely via underground links.',
+    details: 'Take the MRT to save ~$14.70 - $19.20 compared to metered taxi prices (surge unverified), and stay dry entirely via underground links.',
     confidence: 94,
-    costSavings: '$18.40',
+    costSavings: '$14.70 - $19.20',
     timeSavings: '12 mins',
   });
 
@@ -41,20 +113,24 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
         origin,
         destinationA,
         weather.condition || 'Scattered Thunderstorms',
-        true
+        fareVerification.isPeakHour
       );
+
+      const accurateSavings = fareVerification.savingsVsTransit.formatted !== 'Dynamic'
+        ? fareVerification.savingsVsTransit.formatted
+        : '~$14 - $20';
 
       if (advisory.headline) {
         setSmartAdvisory({
           headline: advisory.headline,
-          details: advisory.details,
+          details: advisory.details || `MRT provides sheltered connection from ${origin} to ${destinationA}. Save ${accurateSavings} vs metered taxi.`,
           confidence: advisory.confidence || 92,
-          costSavings: advisory.costSavings || '$18.40',
+          costSavings: accurateSavings,
           timeSavings: advisory.timeSavings || '12 mins',
         });
       }
 
-      setToastMessage(`Optimized with live NEA Weather (${weather.temperature}°C, ${weather.condition}) & LTA feeds!`);
+      setToastMessage(`Optimized route (${fareVerification.distanceKm} km) with live NEA Weather (${weather.temperature}°C) & LTA feeds!`);
       setTimeout(() => setToastMessage(null), 5000);
     } catch (e) {
       console.warn('Optimization error:', e);
@@ -215,12 +291,22 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
             {/* Time & Cost Comparison Card */}
             <div className="bg-[#1E293B] border border-[#334155] rounded-xl overflow-hidden shadow-md">
               <div className="p-4 border-b border-[#334155] flex justify-between items-center bg-[#171f33]/60">
-                <h3 className="text-[14px] font-bold text-[#dae2fd] tracking-wide">
-                  Time &amp; Cost Comparison
-                </h3>
-                <span className="material-symbols-outlined text-[#c1c6d3] text-[18px]">
-                  compare_arrows
-                </span>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[14px] font-bold text-[#dae2fd] tracking-wide">
+                    Time &amp; Cost Comparison
+                  </h3>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40">
+                    LTA &amp; PTC Verified
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowFareAccuracyModal(true)}
+                  className="text-xs text-[#a6c8ff] hover:text-white flex items-center gap-1 cursor-pointer"
+                  title="Check taxi price accuracy and data policy"
+                >
+                  <span className="material-symbols-outlined text-[16px]">verified</span>
+                  <span className="hidden sm:inline">Fare Accuracy</span>
+                </button>
               </div>
 
               <div className="p-3 flex flex-col gap-2">
@@ -231,7 +317,7 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
                       key={opt.id}
                       id={`route-option-${opt.id}`}
                       onClick={() => setSelectedRouteId(opt.id)}
-                      className={`relative flex items-center justify-between p-3.5 rounded-lg cursor-pointer transition-all duration-150 ${
+                      className={`relative flex flex-col p-3.5 rounded-lg cursor-pointer transition-all duration-150 ${
                         opt.isBest
                           ? 'border border-[#a6c8ff] bg-[#131b2e] shadow-sm'
                           : 'bg-[#222a3d] hover:bg-[#2d3449] border border-transparent'
@@ -244,57 +330,77 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
                         </div>
                       )}
 
-                      <div className="flex items-center gap-3">
-                        {/* Icon Container */}
-                        {opt.type === 'taxi' && (
-                          <div className="bg-[#0b1326] p-2.5 rounded-lg border border-[#334155] text-[#005BAA]">
-                            <span className="material-symbols-outlined text-[20px]">local_taxi</span>
-                          </div>
-                        )}
-                        {opt.type === 'mrt' && (
-                          <div className="bg-[#0b1326] p-2 rounded-lg border border-[#334155] flex flex-col gap-1 items-center justify-center">
-                            <div className="h-1.5 w-6 rounded-full bg-[#D42E12]"></div>
-                            <div className="h-1.5 w-6 rounded-full bg-[#FF9A00]"></div>
-                          </div>
-                        )}
-                        {opt.type === 'bus' && (
-                          <div className="bg-[#0b1326] p-2.5 rounded-lg border border-[#334155] text-[#FFD200]">
-                            <span className="material-symbols-outlined text-[20px]">directions_bus</span>
-                          </div>
-                        )}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {/* Icon Container */}
+                          {opt.type === 'taxi' && (
+                            <div className="bg-[#0b1326] p-2.5 rounded-lg border border-[#334155] text-[#005BAA]">
+                              <span className="material-symbols-outlined text-[20px]">local_taxi</span>
+                            </div>
+                          )}
+                          {opt.type === 'mrt' && (
+                            <div className="bg-[#0b1326] p-2 rounded-lg border border-[#334155] flex flex-col gap-1 items-center justify-center">
+                              <div className="h-1.5 w-6 rounded-full bg-[#D42E12]"></div>
+                              <div className="h-1.5 w-6 rounded-full bg-[#FF9A00]"></div>
+                            </div>
+                          )}
+                          {opt.type === 'bus' && (
+                            <div className="bg-[#0b1326] p-2.5 rounded-lg border border-[#334155] text-[#FFD200]">
+                              <span className="material-symbols-outlined text-[20px]">directions_bus</span>
+                            </div>
+                          )}
 
-                        <div>
-                          <div className="text-[14px] font-bold text-[#dae2fd] flex items-center gap-1.5">
-                            <span>{opt.name}</span>
+                          <div>
+                            <div className="text-[14px] font-bold text-[#dae2fd] flex items-center gap-1.5">
+                              <span>{opt.name}</span>
+                              {opt.distanceKm && (
+                                <span className="text-[11px] font-normal text-[#8c919d]">
+                                  ({opt.distanceKm} km)
+                                </span>
+                              )}
+                            </div>
+                            <div className={`text-[12px] flex items-center gap-1 mt-0.5 ${opt.statusColor}`}>
+                              {opt.type === 'taxi' && (
+                                <span className="material-symbols-outlined text-[13px]">info</span>
+                              )}
+                              {opt.type === 'mrt' && (
+                                <span className="material-symbols-outlined text-[13px]">check_circle</span>
+                              )}
+                              {opt.type === 'bus' && (
+                                <span className="material-symbols-outlined text-[13px]">check_circle</span>
+                              )}
+                              <span>{opt.subtext}</span>
+                            </div>
                           </div>
-                          <div className={`text-[12px] flex items-center gap-1 mt-0.5 ${opt.statusColor}`}>
-                            {opt.type === 'taxi' && (
-                              <span className="material-symbols-outlined text-[13px]">trending_up</span>
-                            )}
-                            {opt.type === 'mrt' && (
-                              <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                            )}
-                            {opt.type === 'bus' && (
-                              <span className="material-symbols-outlined text-[13px]">warning</span>
-                            )}
-                            <span>{opt.subtext}</span>
+                        </div>
+
+                        {/* Numerical Stats */}
+                        <div className={`text-right ${opt.isBest ? 'pr-5' : ''}`}>
+                          <div
+                            className={`text-[18px] font-bold font-mono ${
+                              opt.isBest ? 'text-[#a6c8ff]' : 'text-[#dae2fd]'
+                            }`}
+                          >
+                            {opt.durationMin} min
+                          </div>
+                          <div className="text-[12px] text-[#c1c6d3] font-medium">
+                            {opt.costRange ? opt.costRange : `$${opt.cost.toFixed(2)}`}
                           </div>
                         </div>
                       </div>
 
-                      {/* Numerical Stats */}
-                      <div className={`text-right ${opt.isBest ? 'pr-5' : ''}`}>
-                        <div
-                          className={`text-[18px] font-bold font-mono ${
-                            opt.isBest ? 'text-[#a6c8ff]' : 'text-[#dae2fd]'
-                          }`}
-                        >
-                          {opt.durationMin} min
+                      {/* Accuracy & Surge Disclaimer Banner for Taxi */}
+                      {opt.type === 'taxi' && isSelected && (
+                        <div className="mt-2.5 pt-2.5 border-t border-[#334155]/60 flex flex-col gap-1 text-[11px] text-[#c1c6d3]">
+                          <div className="flex items-start gap-1.5 text-[#FF9A00]">
+                            <span className="material-symbols-outlined text-[14px] shrink-0 mt-0.5">verified_user</span>
+                            <span>{opt.accuracyNote}</span>
+                          </div>
+                          <div className="text-[10px] text-[#8c919d] pl-5">
+                            ⚠️ Live ride-hail surge multipliers (Grab/Gojek/Zig) vary by minute. Check official operator apps for binding live quotes.
+                          </div>
                         </div>
-                        <div className="text-[12px] text-[#c1c6d3]">
-                          {opt.cost > 10 ? `~$${opt.cost.toFixed(2)}` : `$${opt.cost.toFixed(2)}`}
-                        </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -433,6 +539,97 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Taxi Fare Accuracy & Data Integrity Modal */}
+      {showFareAccuracyModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#171f33] border border-[#334155] max-w-2xl w-full rounded-2xl p-6 shadow-2xl flex flex-col gap-5 text-[#dae2fd] max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#334155] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#005baa]/30 border border-[#005baa] text-[#a6c8ff] flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[22px]">verified</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Taxi Price Accuracy &amp; Regulatory Standards</h3>
+                  <p className="text-xs text-[#8c919d]">LTA Standard Meter Tariff &amp; Data Integrity Policy</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFareAccuracyModal(false)}
+                className="w-8 h-8 rounded-lg bg-[#222a3d] hover:bg-[#334155] text-[#c1c6d3] flex items-center justify-center cursor-pointer transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Breakdown */}
+            <div className="space-y-4 text-sm leading-relaxed">
+              <div className="bg-[#0b1326] p-4 rounded-xl border border-[#334155]">
+                <div className="text-xs font-bold text-[#a6c8ff] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">rule</span>
+                  Our Accuracy Guarantee: No Guesswork
+                </div>
+                <p className="text-xs text-[#c1c6d3]">
+                  We adhere strictly to Singapore transport regulatory frameworks. If live surge pricing cannot be verified with official operator APIs, we mark it as <strong className="text-white">Surge Unverified</strong> and show the statutory LTA metered fare rather than guessing speculative numbers.
+                </p>
+              </div>
+
+              {/* LTA Meter Breakdown */}
+              <div className="border border-[#334155] rounded-xl p-4 bg-[#1e293b]/60">
+                <h4 className="font-semibold text-white text-sm mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#FFCC00] text-[18px]">calculate</span>
+                  LTA Regulated Meter Tariff (Standard 4-Seater)
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-2.5 rounded-lg bg-[#0b1326] border border-[#334155]/60">
+                    <span className="text-[#8c919d] block mb-0.5">Flag-down Fare (First 1 km)</span>
+                    <span className="font-mono font-bold text-[#dae2fd] text-sm">$4.40 - $4.80</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#0b1326] border border-[#334155]/60">
+                    <span className="text-[#8c919d] block mb-0.5">Distance Rate (Every 400m / 350m)</span>
+                    <span className="font-mono font-bold text-[#dae2fd] text-sm">$0.26 / jump (~$0.65 - $0.74/km)</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#0b1326] border border-[#334155]/60">
+                    <span className="text-[#8c919d] block mb-0.5">Peak Hour Surcharge (25%)</span>
+                    <span className="font-mono font-bold text-[#dae2fd] text-sm">6:00-9:30 AM (Mon-Fri) | 5:00-11:59 PM</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#0b1326] border border-[#334155]/60">
+                    <span className="text-[#8c919d] block mb-0.5">Midnight Surcharge (50%)</span>
+                    <span className="font-mono font-bold text-[#dae2fd] text-sm">12:00 Midnight - 5:59 AM</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Open Data Limitation Notice */}
+              <div className="border border-[#e65100]/40 rounded-xl p-4 bg-[#e65100]/10 text-[#ffd180]">
+                <div className="flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-[20px] text-[#ff9800] shrink-0 mt-0.5">warning</span>
+                  <div className="text-xs space-y-1">
+                    <div className="font-bold text-white">Why are Ride-Hail Surge Fares Marked "Unverified"?</div>
+                    <p className="text-[#ffe0b2]">
+                      Open Government Data (Data.gov.sg v1 and LTA DataMall) provides live taxi vehicle availability coordinates, but does <strong>not</strong> expose third-party algorithmic surge pricing from private operators (Grab, Gojek, Tada, CDG Zig).
+                    </p>
+                    <p className="text-[#ffe0b2]">
+                      For binding trip quotes with live surge multipliers, please verify directly in the operator mobile application.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end pt-2 border-t border-[#334155]">
+              <button
+                onClick={() => setShowFareAccuracyModal(false)}
+                className="bg-[#005baa] hover:bg-[#004b8d] text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
