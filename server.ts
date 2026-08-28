@@ -624,7 +624,7 @@ app.post('/api/ai/smart-advisory', handleSmartAdvisory);
 // 6. PUNCTUALITY MOTIVATOR & ENCOURAGEMENT GENERATOR (GEMINI API REST)
 // ----------------------------------------------------
 app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
-  const { tone = 'singlish', destination = 'work / meeting', currentDelayMin = 0 } = req.body || {};
+  const { tone = 'singlish', destination = 'work / meeting', currentDelayMin = 0, excludeQuote = '' } = req.body || {};
 
   // Distinct fallback banks tailored specifically to each of the 4 personas
   const personaFallbacks: Record<string, Array<{ quote: string; author: string; tag: string; punctualityTip: string }>> = {
@@ -653,6 +653,24 @@ app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
         tag: "Singlish Hype",
         punctualityTip: "Stand at the marked platform arrows so you step in the second doors open.",
       },
+      {
+        quote: "Swee la! Tap in early, catch the express bus, and relax inside the air-con like VIP.",
+        author: "Bedok Interchange Captain",
+        tag: "Singlish Hype",
+        punctualityTip: "Check the overhead arrival board so you don't run for a train that's not yours.",
+      },
+      {
+        quote: "Don't say bo jio! Step out the house right now, zero ERP headache and zero stress!",
+        author: "Jurong East MRT Marshall",
+        tag: "Singlish Hype",
+        punctualityTip: "Keep to the left on escalators—let the fast-walkers pass smoothly.",
+      },
+      {
+        quote: "Huak ah! Early bird gets the seat and the fresh kaya toast before the morning queue starts!",
+        author: "Maxwell Food Centre Aunty",
+        tag: "Singlish Hype",
+        punctualityTip: "Tap card with phone in right hand for optimal fare-gate sensor alignment.",
+      },
     ],
     inspirational: [
       {
@@ -678,6 +696,18 @@ app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
         author: "CBD Executive Coach",
         tag: "High-Flyer Hustle",
         punctualityTip: "Align with exit car 4 for instantaneous transfer at Marina Bay / Raffles Place.",
+      },
+      {
+        quote: "Your reputation is built in minutes, not years. Being punctual signals unwavering competence.",
+        author: "Julian Chen, Fintech Founder",
+        tag: "High-Flyer Hustle",
+        punctualityTip: "Schedule your departure to arrive 10 minutes prior to mentally prime for high stakes.",
+      },
+      {
+        quote: "While competitors are caught in rush-hour traffic, leaders are already executing in the boardroom.",
+        author: "Victoria Sterling, Strategy Partner",
+        tag: "High-Flyer Hustle",
+        punctualityTip: "Download offline documents before transit to maintain uninterrupted momentum.",
       },
     ],
     witty: [
@@ -705,6 +735,18 @@ app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
         tag: "Witty Banter",
         punctualityTip: "Keep your bag in front of you on crowded trains to glide through exits effortlessly.",
       },
+      {
+        quote: "If you leave right this second, you don't even have to rehearse your 'sorry MRT delayed' speech.",
+        author: "Chief Excuse Officer (CEO)",
+        tag: "Witty Banter",
+        punctualityTip: "Walk at 5.5 km/h instead of 4 km/h to shave a full 4 minutes off your last-mile walk.",
+      },
+      {
+        quote: "The only thing faster than the Downtown Line is your heart rate when you leave the house 10 minutes late.",
+        author: "Transit Satirist",
+        tag: "Witty Banter",
+        punctualityTip: "Avoid the middle door bottlenecks by queueing at the far end of the platform.",
+      },
     ],
     zen: [
       {
@@ -731,6 +773,18 @@ app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
         tag: "Zen Calm",
         punctualityTip: "Listen to ambient sounds without judgment as you transition smoothly between stations.",
       },
+      {
+        quote: "Time does not run out; it simply unfolds. Walk with presence and grace, one step at a time.",
+        author: "Platform Philosopher",
+        tag: "Zen Calm",
+        punctualityTip: "Unhurry your pace by leaving 5 minutes earlier; serenity is the greatest luxury.",
+      },
+      {
+        quote: "A quiet mind turns a crowded carriage into a space of peaceful reflection.",
+        author: "Mindful Transit Circle",
+        tag: "Zen Calm",
+        punctualityTip: "Gently soften your gaze during transit to release digital eye strain and tension.",
+      },
     ],
   };
 
@@ -739,10 +793,14 @@ app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
     : tone.toLowerCase();
   
   const personaQuotes = personaFallbacks[normalizedTone] || personaFallbacks.singlish;
+  const filteredQuotes = excludeQuote 
+    ? personaQuotes.filter((item) => item.quote !== excludeQuote)
+    : personaQuotes;
+  const quotePool = filteredQuotes.length > 0 ? filteredQuotes : personaQuotes;
 
   const rawKey = process.env.GEMINI_API_KEY;
   if (!rawKey) {
-    const randomPick = personaQuotes[Math.floor(Math.random() * personaQuotes.length)];
+    const randomPick = quotePool[Math.floor(Math.random() * quotePool.length)];
     return res.json(randomPick);
   }
 
@@ -779,6 +837,7 @@ TAG: 'Zen Calm'`
     const prompt = `You are the Singapore Punctuality Coach ("SG I am Late Pro Punctuality Booster").
 Generate a customized, highly encouraging punctuality message for a commuter heading to "${destination}".
 ${currentDelayMin > 0 ? `Current situation: Commuter is delayed by ${currentDelayMin} minutes, so provide an encouraging recovery push!` : 'Current situation: Commuter is heading out now to arrive ahead of time.'}
+${excludeQuote ? `Do NOT repeat or use this quote: "${excludeQuote}"` : ''}
 
 ${personaInstruction}
 
@@ -794,16 +853,18 @@ Respond ONLY with valid JSON in this exact structure:
   "punctualityTip": "1 practical actionable micro-tip for Singapore transit"
 }`;
 
-    const text = await generateGeminiContent(prompt, rawKey, 'application/json', 0.85);
+    const text = await generateGeminiContent(prompt, rawKey, 'application/json', 0.9);
     if (text) {
       const parsed = JSON.parse(text);
-      return res.json(parsed);
+      if (parsed && parsed.quote) {
+        return res.json(parsed);
+      }
     }
   } catch {
     // Fall back to persona quotes smoothly
   }
 
-  const randomPick = personaQuotes[Math.floor(Math.random() * personaQuotes.length)];
+  const randomPick = quotePool[Math.floor(Math.random() * quotePool.length)];
   return res.json(randomPick);
 });
 

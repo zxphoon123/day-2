@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { fetchPunctualityMotivation, PunctualityMotivation } from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { fetchPunctualityMotivation, getRandomPersonaMotivation, PunctualityMotivation } from '../services/api';
 
 interface PunctualityBoosterProps {
   destination?: string;
@@ -10,33 +10,53 @@ export const PunctualityBooster: React.FC<PunctualityBoosterProps> = ({
   destination = 'Marina Bay Sands',
   className = '',
 }) => {
-  const [motivation, setMotivation] = useState<PunctualityMotivation>({
-    quote: "Early is on time, on time is late, but don't kancheong—MRT doors closing, step in with confidence!",
-    author: "Uncle Lim, Veteran MRT Marshall",
-    tag: "Singlish Hype",
-    punctualityTip: "Board near escalator carriage (Car 3/4) to shave 2 mins off transfer time.",
-  });
   const [selectedTone, setSelectedTone] = useState<'singlish' | 'inspirational' | 'witty' | 'zen'>('singlish');
+  const [motivation, setMotivation] = useState<PunctualityMotivation>(() =>
+    getRandomPersonaMotivation('singlish')
+  );
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [streakCount, setStreakCount] = useState<number>(7);
   const [justClaimedBonus, setJustClaimedBonus] = useState<boolean>(false);
+  const currentQuoteRef = useRef<string>(motivation.quote);
 
   const generateNewMessage = async (tone = selectedTone) => {
     setIsLoading(true);
     try {
-      const data = await fetchPunctualityMotivation(tone, destination, 0);
-      setMotivation(data);
+      const data = await fetchPunctualityMotivation(
+        tone,
+        destination,
+        0,
+        currentQuoteRef.current
+      );
+      if (data && data.quote) {
+        setMotivation(data);
+        currentQuoteRef.current = data.quote;
+      }
     } catch (e) {
       console.warn('Error generating message:', e);
+      const fallback = getRandomPersonaMotivation(tone, currentQuoteRef.current);
+      setMotivation(fallback);
+      currentQuoteRef.current = fallback.quote;
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleToneChange = (tone: 'singlish' | 'inspirational' | 'witty' | 'zen') => {
+    setSelectedTone(tone);
+    // Instant responsive update from the chosen persona bank
+    const instantPick = getRandomPersonaMotivation(tone, currentQuoteRef.current);
+    setMotivation(instantPick);
+    currentQuoteRef.current = instantPick.quote;
+    // Also trigger asynchronous fetch / AI generation
+    generateNewMessage(tone);
+  };
+
   useEffect(() => {
+    // Generate initial on destination change if needed
     generateNewMessage(selectedTone);
-  }, [selectedTone]);
+  }, [destination]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(`"${motivation.quote}" — ${motivation.author}`);
@@ -118,7 +138,7 @@ export const PunctualityBooster: React.FC<PunctualityBoosterProps> = ({
         {toneOptions.map((opt) => (
           <button
             key={opt.id}
-            onClick={() => setSelectedTone(opt.id)}
+            onClick={() => handleToneChange(opt.id)}
             className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer ${
               selectedTone === opt.id
                 ? 'bg-[#005BAA] text-white shadow-sm border border-[#3b82f6]'
