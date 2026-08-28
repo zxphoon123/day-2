@@ -15,6 +15,30 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// ----------------------------------------------------
+// 0. HEALTH CHECK & SYSTEM STATUS
+// ----------------------------------------------------
+const handleHealth = (req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    service: 'SG Commuter Portal API',
+    endpoints: {
+      weather: '/api/weather/summary',
+      transport: '/api/transport/taxi-availability',
+      ltaBus: '/api/lta/bus-arrival',
+      ltaAlerts: '/api/lta/train-alerts',
+      smartAdvisory: '/api/commute/smart-advisory',
+      motivation: '/api/punctual/motivate',
+    },
+  });
+};
+
+app.get('/api/health', handleHealth);
+app.get('/health', handleHealth);
+app.get('/api/status', handleHealth);
+
 // Helper for HTTP requests with timeouts
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 7000) {
   const controller = new AbortController();
@@ -543,8 +567,8 @@ async function generateGeminiContent(prompt: string, apiKey: string, responseMim
 // ----------------------------------------------------
 // 5. AI SMART TRANSIT ADVISORY (GEMINI API REST - x-goog-api-key in Header)
 // ----------------------------------------------------
-app.post('/api/commute/smart-advisory', async (req: Request, res: Response) => {
-  const { origin, destination, weatherCondition, isPeakHour } = req.body;
+const handleSmartAdvisory = async (req: Request, res: Response) => {
+  const { origin, destination, weatherCondition, isPeakHour } = req.body || {};
   const isRaining = weatherCondition?.toLowerCase().includes('rain') || weatherCondition?.toLowerCase().includes('thunder');
 
   const defaultAdvisory = {
@@ -593,7 +617,10 @@ Respond ONLY with valid JSON in this exact structure:
   }
 
   return res.json(defaultAdvisory);
-});
+};
+
+app.post('/api/commute/smart-advisory', handleSmartAdvisory);
+app.post('/api/ai/smart-advisory', handleSmartAdvisory);
 
 // ----------------------------------------------------
 // 6. PUNCTUALITY MOTIVATOR & ENCOURAGEMENT GENERATOR (GEMINI API REST)
