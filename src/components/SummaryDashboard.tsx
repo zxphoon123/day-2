@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { InteractiveMap } from './InteractiveMap';
 import { RouteOption } from '../types';
 import { INITIAL_ROUTE_OPTIONS, NEARBY_DEPARTURES } from '../data/mockData';
+import { fetchSmartAdvisory, fetchLiveWeather } from '../services/api';
 
 interface SummaryDashboardProps {
   onNavigateToBus: () => void;
@@ -14,21 +15,49 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
   onNavigateToMrt,
   onNavigateToWeather,
 }) => {
-  const [origin, setOrigin] = useState<string>('Current Location (Bishan)');
+  const [origin, setOrigin] = useState<string>('Bishan Interchange');
   const [destinationA, setDestinationA] = useState<string>('Marina Bay Sands');
   const [destinationB, setDestinationB] = useState<string>('');
   const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
   const [selectedRouteId, setSelectedRouteId] = useState<string>('opt-mrt');
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>(INITIAL_ROUTE_OPTIONS);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [smartAdvisory, setSmartAdvisory] = useState({
+    headline: 'Heavy rain forecasted in Marina Bay area within 30 minutes.',
+    details: 'Take the MRT to save $18.40 compared to surging taxi prices, and stay dry entirely via underground links.',
+    confidence: 94,
+    costSavings: '$18.40',
+    timeSavings: '12 mins',
+  });
 
-  const handleOptimizeRoute = () => {
+  const handleOptimizeRoute = async () => {
     setIsOptimizing(true);
-    setTimeout(() => {
+    try {
+      const weather = await fetchLiveWeather();
+      const advisory = await fetchSmartAdvisory(
+        origin,
+        destinationA,
+        weather.condition || 'Scattered Thunderstorms',
+        true
+      );
+
+      if (advisory.headline) {
+        setSmartAdvisory({
+          headline: advisory.headline,
+          details: advisory.details,
+          confidence: advisory.confidence || 92,
+          costSavings: advisory.costSavings || '$18.40',
+          timeSavings: advisory.timeSavings || '12 mins',
+        });
+      }
+
+      setToastMessage(`Optimized with live NEA Weather (${weather.temperature}°C, ${weather.condition}) & LTA feeds!`);
+      setTimeout(() => setToastMessage(null), 5000);
+    } catch (e) {
+      console.warn('Optimization error:', e);
+    } finally {
       setIsOptimizing(false);
-      setToastMessage('Route optimized with real-time weather & MRT density data!');
-      setTimeout(() => setToastMessage(null), 4000);
-    }, 600);
+    }
   };
 
   return (
@@ -150,16 +179,18 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
           <div className="flex-1 z-10">
             <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
               <h2 className="text-[20px] font-bold text-white tracking-tight">
-                Proactive Advice
+                AI Proactive Commute Advisory
               </h2>
               <span className="bg-[#FFCC00] text-[#3d2f00] px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wide">
-                High Confidence
+                {smartAdvisory.confidence}% Confidence
+              </span>
+              <span className="bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40 px-2 py-0.5 rounded text-[11px] font-bold">
+                Saves {smartAdvisory.costSavings}
               </span>
             </div>
             <p className="text-[15px] text-[#dae2fd] leading-relaxed">
-              Heavy rain forecasted in Marina Bay area within 30 minutes.{' '}
-              <strong className="text-white font-semibold">Take the MRT</strong> to save $12.50
-              compared to surging taxi prices, and stay dry entirely via underground links.
+              <strong className="text-white font-semibold">{smartAdvisory.headline} </strong>
+              {smartAdvisory.details}
             </p>
           </div>
 

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MRT_LINE_STATUSES,
   DHOBY_GHAUT_HOURLY_FORECAST,
   DHOBY_GHAUT_FULL_DAY_FORECAST,
 } from '../data/mockData';
 import { MrtLineStatus } from '../types';
+import { fetchTrainAlerts, TrainAlert } from '../services/api';
 
 export const MrtDashboard: React.FC = () => {
   const [timeRange, setTimeRange] = useState<'4h' | 'today'>('4h');
@@ -12,19 +13,33 @@ export const MrtDashboard: React.FC = () => {
   const [lastRefreshed, setLastRefreshed] = useState<string>('08:14 AM');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [lineStatuses, setLineStatuses] = useState<MrtLineStatus[]>(MRT_LINE_STATUSES);
+  const [trainAlerts, setTrainAlerts] = useState<TrainAlert[]>([]);
   const [hoveredBar, setHoveredBar] = useState<number | null>(null);
+
+  const loadAlerts = async () => {
+    setIsRefreshing(true);
+    try {
+      const alerts = await fetchTrainAlerts();
+      setTrainAlerts(alerts);
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setLastRefreshed(timeStr);
+    } catch (e) {
+      console.warn('Error loading train alerts:', e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAlerts();
+  }, []);
 
   const forecastData =
     timeRange === '4h' ? DHOBY_GHAUT_HOURLY_FORECAST : DHOBY_GHAUT_FULL_DAY_FORECAST;
 
   const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setLastRefreshed(timeStr);
-      setIsRefreshing(false);
-    }, 600);
+    loadAlerts();
   };
 
   return (

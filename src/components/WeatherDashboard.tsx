@@ -1,33 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HOURLY_WEATHER } from '../data/mockData';
+import { fetchLiveWeather, WeatherBundle } from '../services/api';
 
 export const WeatherDashboard: React.FC = () => {
   const [showRadarModal, setShowRadarModal] = useState<boolean>(false);
   const [activeHour, setActiveHour] = useState<string>('08:00');
   const [radarStep, setRadarStep] = useState<number>(3);
+  const [liveWeather, setLiveWeather] = useState<WeatherBundle | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>('07:42 AM, SGT');
+
+  const loadWeather = async () => {
+    setIsLoading(true);
+    const data = await fetchLiveWeather();
+    setLiveWeather(data);
+    const now = new Date();
+    setLastUpdatedTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', SGT');
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    loadWeather();
+  }, []);
+
+  const temp = liveWeather?.temperature ?? 28;
+  const feelsLike = liveWeather?.feelsLike ?? 32;
+  const humidity = liveWeather?.humidity ?? 84;
+  const windSpeed = liveWeather?.windSpeed ?? 12;
+  const psi = liveWeather?.psi ?? 42;
+  const psiStatus = liveWeather?.psiStatus ?? 'Good';
+  const uv = liveWeather?.uv ?? 6;
+  const uvStatus = liveWeather?.uvStatus ?? 'High';
+  const condition = liveWeather?.condition ?? 'Scattered Thunderstorms';
 
   // Gauge calculations for 100 max circumference (2 * pi * 45 = ~283)
   const circumference = 283;
-  // PSI 42/100 -> offset = 283 - (42/100)*283 = ~164
-  const psiOffset = 283 - (42 / 100) * 283;
-  // UV 6/12 -> offset = 283 - (6/12)*283 = ~141
-  const uvOffset = 283 - (6 / 12) * 283;
+  // PSI max ~100
+  const psiOffset = circumference - (Math.min(psi, 100) / 100) * circumference;
+  // UV max ~12
+  const uvOffset = circumference - (Math.min(uv, 12) / 12) * circumference;
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0b1326] text-[#dae2fd] p-4 md:p-8 max-w-[1440px] w-full mx-auto pb-24 md:pb-8">
       {/* Page Header */}
-      <header className="mb-6 flex justify-between items-end">
+      <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3">
         <div>
           <h2 className="text-[28px] md:text-[32px] font-bold text-[#dae2fd] tracking-tight">
             Environment Outlook
           </h2>
           <p className="text-[15px] text-[#c1c6d3] mt-1">
-            Real-time conditions across Singapore
+            Real-time conditions across Singapore (Data.gov.sg v2)
           </p>
         </div>
-        <div className="text-right">
-          <span className="text-[12px] text-[#8c919d]">Last updated</span>
-          <p className="text-[14px] font-bold font-mono text-[#dae2fd]">07:42 AM, SGT</p>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <span className="text-[12px] text-[#8c919d]">Live Telemetry</span>
+            <p className="text-[14px] font-bold font-mono text-[#dae2fd]">{lastUpdatedTime}</p>
+          </div>
+          <button
+            onClick={loadWeather}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 bg-[#171f33] hover:bg-[#222a3d] border border-[#334155] text-xs font-semibold px-3 py-1.5 rounded-lg text-[#dae2fd] cursor-pointer"
+          >
+            <span className={`material-symbols-outlined text-[16px] ${isLoading ? 'animate-spin' : ''}`}>
+              refresh
+            </span>
+            <span>Update</span>
+          </button>
         </div>
       </header>
 
@@ -45,12 +84,11 @@ export const WeatherDashboard: React.FC = () => {
           </div>
           <div className="flex-1">
             <h3 className="text-[15px] font-bold text-[#dae2fd] mb-1">
-              Commuter Impact
+              Commuter Impact: {condition}
             </h3>
             <p className="text-[14px] text-[#c1c6d3] leading-relaxed">
-              Heavy rain expected in Central area. Wet roads: Expect{' '}
-              <strong className="text-white">+10 min for Taxi</strong> travel times.{' '}
-              <strong className="text-[#a6c8ff]">MRT platforms</strong> may be crowded.
+              Wet roads detected. Expect <strong className="text-white">+10-15 min for Taxi / Grab</strong> travel times.{' '}
+              <strong className="text-[#a6c8ff]">MRT networks</strong> operate sheltered &amp; unaffected by rain.
             </p>
           </div>
         </section>
@@ -60,20 +98,20 @@ export const WeatherDashboard: React.FC = () => {
           <div className="flex justify-between items-start z-10">
             <div>
               <span className="text-[12px] font-bold uppercase tracking-wider text-[#a6c8ff]">
-                Current Conditions
+                Current Conditions (Singapore)
               </span>
               <div className="flex items-baseline gap-2 mt-2">
                 <h1 className="text-[72px] font-extrabold font-mono text-[#dae2fd] leading-none">
-                  28°
+                  {temp}°
                 </h1>
                 <span className="text-[28px] font-bold text-[#8c919d]">C</span>
               </div>
               <p className="text-[22px] font-semibold text-[#dae2fd] mt-2">
-                Scattered Thunderstorms
+                {condition}
               </p>
               <div className="mt-2 text-xs text-[#c1c6d3] flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#FF3B30] animate-pulse"></span>
-                <span>Active monsoon surge alert in effect</span>
+                <span className="w-2 h-2 rounded-full bg-[#34C759] animate-pulse"></span>
+                <span>Direct feed from NEA &amp; Data.gov.sg v2</span>
               </div>
             </div>
 
@@ -82,7 +120,11 @@ export const WeatherDashboard: React.FC = () => {
                 className="material-symbols-outlined text-[90px] md:text-[110px]"
                 style={{ fontVariationSettings: "'FILL' 1" }}
               >
-                thunderstorm
+                {condition.toLowerCase().includes('rain') || condition.toLowerCase().includes('shower')
+                  ? 'thunderstorm'
+                  : condition.toLowerCase().includes('cloud')
+                  ? 'cloud'
+                  : 'sunny'}
               </span>
             </div>
           </div>
@@ -90,15 +132,15 @@ export const WeatherDashboard: React.FC = () => {
           <div className="grid grid-cols-3 gap-4 mt-8 z-10 border-t border-[#334155] pt-4">
             <div>
               <span className="text-[12px] text-[#8c919d] block mb-1">Humidity</span>
-              <span className="text-[18px] font-bold font-mono text-[#dae2fd]">84%</span>
+              <span className="text-[18px] font-bold font-mono text-[#dae2fd]">{humidity}%</span>
             </div>
             <div>
               <span className="text-[12px] text-[#8c919d] block mb-1">Wind</span>
-              <span className="text-[18px] font-bold font-mono text-[#dae2fd]">12 km/h NE</span>
+              <span className="text-[18px] font-bold font-mono text-[#dae2fd]">{windSpeed} km/h NE</span>
             </div>
             <div>
               <span className="text-[12px] text-[#8c919d] block mb-1">Feels Like</span>
-              <span className="text-[18px] font-bold font-mono text-[#dae2fd]">32°</span>
+              <span className="text-[18px] font-bold font-mono text-[#dae2fd]">{feelsLike}°</span>
             </div>
           </div>
         </section>
@@ -108,11 +150,10 @@ export const WeatherDashboard: React.FC = () => {
           {/* PSI Index Gauge */}
           <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-6 flex flex-col items-center justify-center relative shadow-md">
             <h3 className="text-[13px] font-bold text-[#c1c6d3] self-start mb-2">
-              PSI Index
+              PSI Index (24-hr National)
             </h3>
             <div className="relative w-32 h-32 my-1">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                {/* Background Circle */}
                 <circle
                   cx="50"
                   cy="50"
@@ -121,13 +162,12 @@ export const WeatherDashboard: React.FC = () => {
                   stroke="#334155"
                   strokeWidth="8"
                 />
-                {/* Progress Circle (Safe Green) */}
                 <circle
                   cx="50"
                   cy="50"
                   r="45"
                   fill="none"
-                  stroke="#34C759"
+                  stroke={psi <= 50 ? '#34C759' : psi <= 100 ? '#FFCC00' : '#FF3B30'}
                   strokeWidth="8"
                   strokeDasharray={circumference}
                   strokeDashoffset={psiOffset}
@@ -137,26 +177,25 @@ export const WeatherDashboard: React.FC = () => {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-[30px] font-bold font-mono text-[#dae2fd]">
-                  42
+                  {psi}
                 </span>
                 <span className="text-[12px] text-[#34C759] font-bold">
-                  Good
+                  {psiStatus}
                 </span>
               </div>
             </div>
             <p className="text-[12px] text-[#c1c6d3] text-center mt-2">
-              Normal activities suitable for all.
+              Normal outdoor transit suitable.
             </p>
           </div>
 
           {/* UV Index Gauge */}
           <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-6 flex flex-col items-center justify-center relative shadow-md">
             <h3 className="text-[13px] font-bold text-[#c1c6d3] self-start mb-2">
-              UV Index
+              UV Index (Hourly)
             </h3>
             <div className="relative w-32 h-32 my-1">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                {/* Background Circle */}
                 <circle
                   cx="50"
                   cy="50"
@@ -165,13 +204,12 @@ export const WeatherDashboard: React.FC = () => {
                   stroke="#334155"
                   strokeWidth="8"
                 />
-                {/* Progress Circle (Warning Yellow) */}
                 <circle
                   cx="50"
                   cy="50"
                   r="45"
                   fill="none"
-                  stroke="#FFCC00"
+                  stroke={uv <= 3 ? '#34C759' : uv <= 6 ? '#FFCC00' : '#FF3B30'}
                   strokeWidth="8"
                   strokeDasharray={circumference}
                   strokeDashoffset={uvOffset}
@@ -181,15 +219,15 @@ export const WeatherDashboard: React.FC = () => {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-[30px] font-bold font-mono text-[#dae2fd]">
-                  6
+                  {uv}
                 </span>
                 <span className="text-[12px] text-[#FFCC00] font-bold">
-                  High
+                  {uvStatus}
                 </span>
               </div>
             </div>
             <p className="text-[12px] text-[#c1c6d3] text-center mt-2">
-              Protection required between 10am-4pm.
+              Sun protection advised outdoors.
             </p>
           </div>
         </section>

@@ -33,6 +33,8 @@ export interface BusServiceItem {
   arrivingInMin: number;
   occupancy: 'Low' | 'Med' | 'High';
   wheelchairAccessible?: boolean;
+  isWheelchairAccessible?: boolean;
+  routeColor?: string;
 }
 
 export interface OdFlowItem {
