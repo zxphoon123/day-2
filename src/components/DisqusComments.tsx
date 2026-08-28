@@ -21,7 +21,7 @@ export const DisqusComments: React.FC<DisqusCommentsProps> = ({
   identifier,
   title,
   url,
-  shortname = 'day-2-project-1',
+  shortname = 'day-2-project-1-1',
   language = 'zh_TW',
 }) => {
   const [mounted, setMounted] = useState<boolean>(false);

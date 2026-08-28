@@ -122,7 +122,7 @@ export const CommunityDashboard: React.FC = () => {
             id: `sg-commuter-${selectedTopic}`,
             title: `SG Commuter - ${topics.find((t) => t.id === selectedTopic)?.label || 'Community'}`,
           }}
-          shortname="day-2-project-1"
+          shortname="day-2-project-1-1"
           language="zh_TW"
         />
       </div>
