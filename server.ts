@@ -577,6 +577,104 @@ Respond ONLY with valid JSON in this exact structure:
 });
 
 // ----------------------------------------------------
+// 6. PUNCTUALITY MOTIVATOR & ENCOURAGEMENT GENERATOR (GEMINI API REST)
+// ----------------------------------------------------
+app.post('/api/punctual/motivate', async (req: Request, res: Response) => {
+  const { tone = 'singlish', destination = 'work / meeting', currentDelayMin = 0 } = req.body || {};
+
+  const localQuotes = [
+    {
+      quote: "Early is on time, on time is late, but don't kancheong—MRT doors closing, step in with confidence!",
+      author: "Uncle Lim, Veteran MRT Marshall",
+      tag: "Singlish Hype",
+      punctualityTip: "Board near escalator carriage (Car 3/4) to shave 2 mins off transfer time.",
+    },
+    {
+      quote: "Steady pom pi pi! Leaving now means you get your morning kopi tiam seat and peace of mind.",
+      author: "CBD Kopitiam Lao Ban",
+      tag: "Local Wisdom",
+      punctualityTip: "Prep your EZ-Link or Apple Pay in advance to breeze past gantry bottlenecks.",
+    },
+    {
+      quote: "Time is Singapore's ultimate currency. Beat the rush hour crowd and conquer the day before 9 AM!",
+      author: "Shenton Way Hustler",
+      tag: "High-Flyer",
+      punctualityTip: "A 5-minute headstart saves 20 minutes of peak transit congestion.",
+    },
+    {
+      quote: "Breathe in calm, step onto the train. You have total mastery over your morning journey.",
+      author: "Commuter Zen Master",
+      tag: "Mindful Transit",
+      punctualityTip: "Check overhead arrival boards at platform interchanges for fastest train transfers.",
+    },
+    {
+      quote: "Don't panic! Check the live bus arrival countdown—every second saved is a victory for your morning!",
+      author: "Captain Punctual",
+      tag: "Quick Boost",
+      punctualityTip: "Use sheltered linkways to keep moving regardless of sudden tropical downpours.",
+    },
+  ];
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    const randomPick = localQuotes[Math.floor(Math.random() * localQuotes.length)];
+    return res.json(randomPick);
+  }
+
+  try {
+    const prompt = `You are the Singapore Punctuality Coach ("SG I am Late Pro Punctuality Booster").
+Generate a short, punchy, witty, encouraging message to inspire a commuter to stay punctual, avoid being late, and reach ${destination} smoothly.
+Tone style: ${tone} (Options: authentic Singaporean Singlish with terms like 'steady', 'kancheong spider', 'kopi', or inspiring, or witty).
+Current situation: ${currentDelayMin > 0 ? `Commuter is slightly delayed by ${currentDelayMin} mins.` : 'Commuter is heading out now.'}
+
+Respond ONLY with valid JSON in this exact structure:
+{
+  "quote": "Short punchy 1-2 sentence motivating quote or Singlish encouragement to be on time",
+  "author": "Creative character name (e.g. 'Uncle Kopi', 'Shenton Way Pro', 'MRT Announcer')",
+  "tag": "Tone label (e.g. 'Singlish Hype', 'CBD Hustler', 'Mindful Focus')",
+  "punctualityTip": "1 practical actionable micro-tip for Singapore transit to shave off 2-3 minutes"
+}`;
+
+    const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+    const response = await fetchWithTimeout(geminiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': geminiKey,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (candidateText) {
+      const parsed = JSON.parse(candidateText);
+      return res.json(parsed);
+    } else {
+      throw new Error('No candidate text');
+    }
+  } catch (error: any) {
+    console.warn('Falling back to local punctuality quote:', error.message);
+    const randomPick = localQuotes[Math.floor(Math.random() * localQuotes.length)];
+    return res.json(randomPick);
+  }
+});
+
+// ----------------------------------------------------
 // VITE & STATIC SERVING
 // ----------------------------------------------------
 async function startServer() {

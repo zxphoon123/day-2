@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { InteractiveMap } from './InteractiveMap';
+import { PunctualityBooster } from './PunctualityBooster';
 import { RouteOption } from '../types';
 import { INITIAL_ROUTE_OPTIONS, NEARBY_DEPARTURES } from '../data/mockData';
 import { fetchSmartAdvisory, fetchLiveWeather } from '../services/api';
@@ -201,6 +202,9 @@ export const SummaryDashboard: React.FC<SummaryDashboardProps> = ({
             Check Weather →
           </button>
         </div>
+
+        {/* Punctuality Booster & Encouragement Generator */}
+        <PunctualityBooster destination={destinationA || 'Marina Bay Sands'} />
 
         {/* 2-Column Bento Grid Layout */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">

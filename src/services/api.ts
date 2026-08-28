@@ -206,3 +206,35 @@ export async function fetchSmartAdvisory(origin: string, destination: string, we
     };
   }
 }
+
+// 6. Fetch Punctuality Motivation Message
+export interface PunctualityMotivation {
+  quote: string;
+  author: string;
+  tag: string;
+  punctualityTip: string;
+}
+
+export async function fetchPunctualityMotivation(
+  tone: 'singlish' | 'inspirational' | 'witty' | 'zen' = 'singlish',
+  destination = 'work / meeting',
+  currentDelayMin = 0
+): Promise<PunctualityMotivation> {
+  try {
+    const res = await fetch('/api/punctual/motivate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tone, destination, currentDelayMin }),
+    });
+    if (!res.ok) throw new Error('Network error');
+    return await res.json();
+  } catch (error) {
+    return {
+      quote: "Steady pom pi pi! Leaving now means you beat the crowd, get your kopi seat, and arrive like a champion.",
+      author: "CBD Kopitiam Lao Ban",
+      tag: "Singlish Hype",
+      punctualityTip: "Board carriages aligned with your exit escalators to shave 2 minutes off your transfer.",
+    };
+  }
+}
+
